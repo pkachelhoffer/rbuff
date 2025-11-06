@@ -11,22 +11,31 @@ type RingBuffer[T any] struct {
 	buffer []T
 
 	// reader is the index of the buffer that's been read previously.
-	reader     int
-	readerNext int
-	readerOdd  bool
+	reader int
+
+	// readerOdd tracks when the reader wraps around to the start of the buffer.
+	readerOdd bool
+
+	// readerInit indicates whether the reader has been initialized to start reading from the buffer.
 	readerInit bool
 
 	// writer is the index of the buffer that's been written to previously.
-	writer     int
-	writerNext int
-	writerOdd  bool
-	writerInit bool
+	writer int
 
-	muWriter sync.RWMutex
-	muReader sync.RWMutex
+	// writerNext is the next index of the buffer to be written to, computed during the write operation. Declared outside
+	// the scope of the function to avoid allocations.
+	writerNext int
+
+	// writerOdd tracks when the writer wraps around to the start of the buffer. Used to check if the writer is ahead or
+	// behind the reader.
+	writerOdd bool
+
+	// writerInit indicates whether the writer has been initialized to start writing to the buffer.
+	writerInit bool
 
 	mu sync.Mutex
 
+	// sleep defines the duration for which the buffer sleeps while waiting for read or write operations to be possible.
 	sleep time.Duration
 }
 
@@ -61,6 +70,7 @@ func WithSleep(sleep time.Duration) FnOptions {
 	}
 }
 
+// Add inserts an item into the ring buffer, waiting if necessary until space is available to write.
 func (rb *RingBuffer[T]) Add(item T) {
 	for {
 		ok := rb.checkAddNext(item)
@@ -105,6 +115,8 @@ func (rb *RingBuffer[T]) checkAddNext(item T) bool {
 	return true
 }
 
+// Read retrieves the next item from the ring buffer, blocking and retrying if the buffer is empty or if the writer has
+// added no new entries
 func (rb *RingBuffer[T]) Read() T {
 	for {
 		val, ok := rb.checkReadNext()

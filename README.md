@@ -1,0 +1,2 @@
+# rbuff
+Golang ringbuffer implementation

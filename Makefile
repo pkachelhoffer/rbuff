@@ -1,4 +1,4 @@
-.PHONY: bench-ringbuffer bench-listbatcher
+.PHONY: bench-ringbuffer
 
 bench-ringbuffer:
 	go test -bench=BenchmarkAddRemoveRingBuffer -run=^$ -benchmem -benchtime=10s ./ -trace=./trace.out

@@ -1,6 +1,7 @@
 package rbuff
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -71,15 +72,19 @@ func WithSleep(sleep time.Duration) FnOptions {
 }
 
 // Add inserts an item into the ring buffer, waiting if necessary until space is available to write.
-func (rb *RingBuffer[T]) Add(item T) {
+func (rb *RingBuffer[T]) Add(ctx context.Context, item T) error {
 	for {
 		ok := rb.checkAddNext(item)
 		if !ok {
-			time.Sleep(rb.sleep)
-			continue
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(rb.sleep):
+				continue
+			}
 		}
 
-		return
+		return nil
 	}
 }
 
@@ -117,15 +122,20 @@ func (rb *RingBuffer[T]) checkAddNext(item T) bool {
 
 // Read retrieves the next item from the ring buffer, blocking and retrying if the buffer is empty or if the writer has
 // added no new entries
-func (rb *RingBuffer[T]) Read() T {
+func (rb *RingBuffer[T]) Read(ctx context.Context) (T, error) {
 	for {
 		val, ok := rb.checkReadNext()
 		if !ok {
-			time.Sleep(rb.sleep)
-			continue
+			select {
+			case <-ctx.Done():
+				var t T
+				return t, ctx.Err()
+			case <-time.After(rb.sleep):
+				continue
+			}
 		}
 
-		return val
+		return val, nil
 	}
 }
 

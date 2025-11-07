@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type iType string
@@ -150,13 +152,10 @@ func TestScenarios(t *testing.T) {
 				mu      sync.Mutex
 			)
 
-			wg := sync.WaitGroup{}
-
-			wg.Add(2)
+			var eg errgroup.Group
 
 			// writers
-			go func() {
-				defer wg.Done()
+			eg.Go(func() error {
 				for _, in := range tc.instructions {
 					if in.iType != iTypeWrite {
 						continue
@@ -166,15 +165,18 @@ func TestScenarios(t *testing.T) {
 
 					for i := 0; i < in.count; i++ {
 						time.Sleep(in.sleep)
-						rb.Add(i)
+						err := rb.Add(t.Context(), i)
+						if err != nil {
+							return err
+						}
 					}
-
 				}
-			}()
+
+				return nil
+			})
 
 			// readers
-			go func() {
-				defer wg.Done()
+			eg.Go(func() error {
 				for _, in := range tc.instructions {
 					if in.iType != iTypeRead {
 						continue
@@ -185,14 +187,23 @@ func TestScenarios(t *testing.T) {
 					for i := 0; i < in.count; i++ {
 						time.Sleep(in.sleep)
 						mu.Lock()
-						res := rb.Read()
+						res, err := rb.Read(t.Context())
+						if err != nil {
+							return err
+						}
 						results = append(results, res)
 						mu.Unlock()
 					}
 				}
-			}()
 
-			wg.Wait()
+				return nil
+			})
+
+			err := eg.Wait()
+			if err != nil {
+				t.Errorf("error running loops: %s", err.Error())
+				t.Fail()
+			}
 
 			if len(tc.expResults) != len(results) {
 				t.Errorf("expected result length differs")
@@ -219,16 +230,25 @@ func sliceCount(n int) []int {
 func BenchmarkAddRemoveRingBuffer(b *testing.B) {
 	rb := NewRB[int](30)
 	for i := 0; i < b.N; i++ {
-		runAddRemove(rb, 30)
+		runAddRemove(b, rb, 30)
 	}
 }
 
-func runAddRemove(rb *RingBuffer[int], cnt int) {
+func runAddRemove(b *testing.B, rb *RingBuffer[int], cnt int) {
+	var err error
 	for i := 0; i < cnt; i++ {
-		rb.Add(i)
+		err = rb.Add(b.Context(), i)
+		if err != nil {
+			b.Errorf("err adding item")
+			b.Fail()
+		}
 	}
 
 	for i := 0; i < cnt; i++ {
-		rb.Read()
+		_, err = rb.Read(b.Context())
+		if err != nil {
+			b.Errorf("err adding item")
+			b.Fail()
+		}
 	}
 }
